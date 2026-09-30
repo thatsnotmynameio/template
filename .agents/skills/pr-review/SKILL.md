@@ -34,7 +34,7 @@ Run one at a time:
 
        gh api repos/{repo}/issues/{pr}/comments --paginate --jq '.[] | select(.user.login == "{me}") | select(.body | contains("<!-- pr-review:summary -->")) | {id, body}'
 
-   The newest is the summary. Its last line, `<!-- pr-review:state {...} -->`, is a JSON object: `sha` (the last reviewed commit) and `summary_only` (findings listed only in the summary, each with `severity`, `title`, `path`, `line`).
+   The newest is the summary. Its line that starts with `<!-- pr-review:state` (not necessarily the body's last line: the body may end with a newline) holds a JSON object: `sha` (the last reviewed commit) and `summary_only` (findings listed only in the summary, each with `severity`, `title`, `path`, `line`).
 
 2. The review threads this review opened (their first comment is `{me}`'s and carries `<!-- pr-review:finding -->`), with `{me}`'s replies only:
 
