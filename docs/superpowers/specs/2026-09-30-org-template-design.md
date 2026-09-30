@@ -88,6 +88,7 @@ Checkout with `fetch-depth: 0`, then, when the input `coverage-artifact` is set,
 2. **Security:**
    - vulnerability alerts and Dependabot security updates on;
    - secret scanning and push protection on;
+   - private vulnerability reporting on (the organization's `SECURITY.md` points there);
    - CodeQL default setup configured.
 3. **Ruleset "checks" on the default branch:**
    - Required status checks default to `version`, `actionlint / actionlint`, `docs / docs.page check` (a job of a reusable workflow reports as `<caller job> / <its job>`), each required from GitHub Actions (integration 15368); `--checks` replaces the list.
