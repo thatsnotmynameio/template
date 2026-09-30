@@ -19,7 +19,7 @@ Out of scope: migrating `pururu-ha` (or any existing repository) to the shared w
 | Secrets | `CLAUDE_CODE_OAUTH_TOKEN` and `SONAR_TOKEN` are organization secrets, available to the repositories that use them; callers pass them with `secrets: inherit`. Nothing in this design sets a secret. |
 | Permissions | Callers grant the ceiling on the job that calls a reusable workflow; each reusable job asks for the least it needs (permissions only go down). |
 | Claude review | **No workflow.** The review process of `pururu-ha` (`.claude/review/review.md`, `rules.md`, the `review-reader` agent) becomes a local skill, `/pr-review <N>`, run from Claude Code with the user's `gh`. |
-| Agent instructions | `AGENTS.md` and `.agents/` are canonical; `CLAUDE.md` and `.claude/skills`, `.claude/agents` are symlinks to them. `.claude/` stays a real directory for what is Claude's alone (`settings.json`). |
+| Agent instructions | `AGENTS.md` and `.agents/` are canonical; `CLAUDE.md` and `.claude/skills`, `.claude/agents` are symlinks to them. `.claude/` stays a real directory, for what is Claude's alone when a project needs it (`settings.json`). |
 | Repository settings | A template copies files only: settings, rulesets, security features and variables are not copied. `scripts/bootstrap.sh` in `.github` applies them to a repository, idempotently. The organization ruleset "main rule" (PR required, squash only, no force push, no deletion, review threads resolved) already applies to every repository by itself. |
 | Cut (YAGNI) | The Claude review workflow and its publish job, `profile/README.md`, `CONTRIBUTING.md`, custom labels, HACS, hassfest, the Home Assistant ruff and mypy settings, any stack. |
 
@@ -28,10 +28,11 @@ Out of scope: migrating `pururu-ha` (or any existing repository) to the shared w
 ```
 .github/
 ├── workflows/
+│   ├── actionlint.yml    reusable: actionlint over the caller's workflows
 │   ├── claude.yml        reusable: @claude on issues and pull requests
 │   ├── docs.yml          reusable: docs.page check
 │   ├── sonar.yml         reusable: SonarQube Cloud scan
-│   ├── ci.yml            this repository: actionlint, shellcheck, release.py tests
+│   ├── ci.yml            this repository: actionlint, shellcheck, unittest (release.py, bootstrap.sh), version
 │   └── release.yml       this repository: publishes its own vX.Y.Z (dogfoods actions/release)
 └── dependabot.yml        github-actions, weekly
 actions/
@@ -40,16 +41,21 @@ actions/
     ├── release.py        the version rules
     └── test_release.py   unittest, stdlib only
 scripts/
-└── bootstrap.sh          applies the GitHub settings to <owner/repo>
+├── bootstrap.sh          applies the GitHub settings to <owner/repo>
+└── test_bootstrap.py     unittest against a fake gh on PATH
 SECURITY.md               the organization's default policy
 VERSION                   0.1.0
 README.md                 what is here and how a repository uses it
 LICENSE, .gitignore
 ```
 
+### `actionlint.yml` (reusable)
+
+Checks out the caller, downloads actionlint's official `linux_amd64` release (a pinned version, verified against its published sha256) into `$RUNNER_TEMP`, and runs it over `.github/workflows`; actionlint also runs the runner's shellcheck on every `run:`. Job name: `actionlint`, so its check is `<caller job> / actionlint`. The pinned version is bumped by hand (Dependabot doesn't see it).
+
 ### `claude.yml` (reusable)
 
-`pururu-ha`'s `claude.yml` as a `workflow_call`: the `@claude` mention filter, checkout, `anthropics/claude-code-action` pinned by SHA, `contents: read`, `pull-requests: read`, `issues: read`, `id-token: write`, `actions: read`. The action refuses actors without write access, so a stranger's comment on a public repository triggers nothing. Inputs: `model` (default: the action's), `claude-args` (default empty). The caller keeps the `on:` events (`issue_comment`, `pull_request_review_comment`, `issues`, `pull_request_review`), since a reusable workflow can't declare its caller's triggers.
+`pururu-ha`'s `claude.yml` as a `workflow_call`: the `@claude` mention filter, checkout, `anthropics/claude-code-action` pinned by SHA, `contents: read`, `pull-requests: read`, `issues: read`, `id-token: write`, `actions: read`. The action refuses actors without write access, so a stranger's comment on a public repository triggers nothing. Input: `claude-args` (default empty; `--model` goes there). The caller passes secrets with `secrets: inherit`. The caller keeps the `on:` events (`issue_comment`, `pull_request_review_comment`, `issues`, `pull_request_review`), since a reusable workflow can't declare its caller's triggers.
 
 ### `docs.yml` (reusable)
 
@@ -84,8 +90,8 @@ Checkout with `fetch-depth: 0`, then, when the input `coverage-artifact` is set,
    - secret scanning and push protection on;
    - CodeQL default setup configured.
 3. **Ruleset "checks" on the default branch:**
-   - Required status checks default to `version`, `actionlint`, `docs.page check`; `--checks` replaces the list.
-   - Code scanning is required: CodeQL, errors, high or higher.
+   - Required status checks default to `version`, `actionlint / actionlint`, `docs / docs.page check` (a job of a reusable workflow reports as `<caller job> / <its job>`), each required from GitHub Actions (integration 15368); `--checks` replaces the list.
+   - Code scanning is required (CodeQL, errors, high or higher) only when step 2 configured CodeQL's default setup: requiring a check that never runs would block every pull request.
    - An existing ruleset of that name is updated, otherwise one is created.
 4. `--sonar`: the repository variable `SONAR_ENABLED=true`.
 5. `--template`: `is_template: true`.
@@ -95,9 +101,9 @@ It ends by printing the resulting settings (`gh api repos/<repo>` fields and the
 ### This repository's CI and releases
 
 - **`ci.yml` on pull requests:**
-  - `actionlint` on the workflows;
+  - `actionlint` on the workflows, through `./.github/workflows/actionlint.yml`;
   - `shellcheck` on `bootstrap.sh`;
-  - `python3 -m unittest` in `actions/release`;
+  - `python3 -m unittest` in `actions/release` and `scripts` (job `unittest`);
   - `actions/release` in `check` mode, from the pull request's own tree (`uses: ./actions/release`).
 - **`release.yml` on `main`:** the same action in `publish` mode.
 - Actions are pinned by SHA.
@@ -107,7 +113,7 @@ It ends by printing the resulting settings (`gh api repos/<repo>` fields and the
 ```
 .github/
 ├── workflows/
-│   ├── ci.yml            PR: jobs `version` (actions/release check) and `actionlint`; the project adds its own
+│   ├── ci.yml            PR: job `version` (actions/release check) and job `actionlint` (calls .github's actionlint.yml); the project adds its own
 │   ├── release.yml       push to main: actions/release publish (needs the project's build jobs, when there are any)
 │   ├── docs.yml          PR: calls .github's docs.yml
 │   ├── sonar.yml         PR and main: calls .github's sonar.yml, if: vars.SONAR_ENABLED == 'true'
@@ -121,8 +127,7 @@ It ends by printing the resulting settings (`gh api repos/<repo>` fields and the
     └── review-reader.md  read-only finder/verifier subagent
 .claude/
 ├── skills -> ../.agents/skills
-├── agents -> ../.agents/agents
-└── settings.json
+└── agents -> ../.agents/agents
 AGENTS.md                 skeleton of pururu-ha's CLAUDE.md sections
 CLAUDE.md -> AGENTS.md
 docs.json, docs/index.mdx the minimal docs.page site
@@ -224,11 +229,11 @@ Git stores them as symlinks (mode `120000`) and "Use this template" keeps them. 
 1. **Build `.github`:**
    - Create it (public) and push its files through a pull request.
    - Its CI must pass: actionlint, shellcheck, unittest, version check.
-   - Run `bootstrap.sh` on it (`--checks "actionlint,shellcheck,unittest,version"`).
+   - Run `bootstrap.sh` on it (`--checks "version,shellcheck,unittest,actionlint / actionlint"`).
    - Merge; its Release publishes `v0.1.0`.
 2. **Build `template`:**
    - Pin the callers to `.github`'s `v0.1.0` SHA.
-   - Push through a pull request; its checks must pass (`version`, `actionlint`, `docs.page check`; Sonar skipped: the variable is unset).
+   - Push through a pull request; its checks must pass (`version`, `actionlint / actionlint`, `docs / docs.page check`; Sonar skipped: the variable is unset).
    - Run `bootstrap.sh thatsnotmynameio/template --template`.
 3. **End to end:**
    - Create a throwaway repository from the template and run the bootstrap.
