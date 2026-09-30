@@ -44,7 +44,7 @@ scripts/
 SECURITY.md               the organization's default policy
 VERSION                   0.1.0
 README.md                 what is here and how a repository uses it
-LICENSE
+LICENSE, .gitignore
 ```
 
 ### `claude.yml` (reusable)
@@ -181,6 +181,39 @@ The review process of `pururu-ha` (`.claude/review/review.md`), same rigor, adap
 `review-reader.md` keeps `pururu-ha`'s rules (Read, Grep, Glob, read-only git; never `gh`; never posts), without the project name. It adds reading at a sha with `git show`.
 
 `rules.md` skeleton sections: Severity (P0/P1/P2 generic definitions, to adjust), Never flag (this repository's linters and CI, style, lockfiles, `docs/superpowers/`), Worth checking (empty, with commented examples), Extra lenses (empty), Risk (low / medium / high / critical areas, to fill).
+
+### `.gitignore`
+
+Language-agnostic; each project appends its stack's entries.
+
+```gitignore
+# OS and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Agents' local state (the shared instructions in .agents/ and .claude/ are committed)
+.claude/settings.local.json
+.claude/autoharness/
+.remember/
+
+# Docs (docs.page CLI)
+node_modules/
+
+# Coverage reports (Sonar)
+coverage.xml
+.coverage
+coverage/
+```
+
+`.github` gets the same file without the docs and coverage blocks, plus `__pycache__/` (its `release.py` tests).
 
 ### Symlinks
 
