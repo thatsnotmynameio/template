@@ -154,6 +154,7 @@ git commit -m "Base files: license, security policy, version 0.1.0"
 ```python
 """release.py's tests: python3 -m unittest discover -s actions/release -v"""
 
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -164,6 +165,10 @@ import unittest
 import release
 
 RELEASE = Path(__file__).resolve().parent / "release.py"
+# git without the user's or the system's configuration (signed tags, hooks...)
+GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com"}
 
 
 def temp_dir(test: unittest.TestCase) -> Path:
@@ -246,16 +251,15 @@ class Main(unittest.TestCase):
     def setUp(self) -> None:
         self.dir = temp_dir(self)
         self.git("init", "-q")
-        self.git("-c", "user.name=t", "-c", "user.email=t@example.com",
-                 "commit", "-q", "--allow-empty", "-m", "init")
+        self.git("commit", "-q", "--allow-empty", "-m", "init")
         (self.dir / "VERSION").write_text("0.2.0\n")
 
     def git(self, *args: str) -> None:
-        subprocess.run(["git", *args], cwd=self.dir, check=True)
+        subprocess.run(["git", *args], cwd=self.dir, env=GIT_ENV, check=True)
 
     def run_release(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run([sys.executable, str(RELEASE), *args], cwd=self.dir,
-                              capture_output=True, text=True, check=False)
+                              env=GIT_ENV, capture_output=True, text=True, check=False)
 
     def test_check_unreleased(self) -> None:
         result = self.run_release("check")
